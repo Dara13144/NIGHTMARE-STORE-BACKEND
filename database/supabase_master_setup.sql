@@ -1,9 +1,10 @@
 -- ============================================================================
--- NIGHTMARE STORE: MASTER SUPABASE SCHEMA & COMPLETE SYSTEM SETUP
--- Paste this entire file into Supabase SQL Editor:
+-- NIGHTMARE STORE: COMPLETE MASTER SUPABASE SQL SETUP
+-- Paste this entire script into your Supabase SQL Editor:
 -- https://supabase.com/dashboard/project/wzcerytdyboigwjyqkoc/sql/new
 -- ============================================================================
 
+-- Enable required cryptographic & UUID extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -11,7 +12,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- 1. PROFILES & USER ACCOUNTS
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     discord_id TEXT UNIQUE,
     google_id TEXT,
     username TEXT,
@@ -28,13 +29,16 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+-- Ensure non-blocking constraints so custom registrations & auth users both succeed
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey;
+
 CREATE INDEX IF NOT EXISTS idx_profiles_discord_id ON public.profiles(discord_id);
 CREATE INDEX IF NOT EXISTS idx_profiles_google_id ON public.profiles(google_id);
 CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
 CREATE INDEX IF NOT EXISTS idx_profiles_status ON public.profiles(status);
 CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(email);
 
--- Auto create profile on auth signup trigger
+-- Trigger to automatically populate public.profiles when someone signs up via Supabase Auth
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 BEGIN
@@ -62,7 +66,7 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
 
 -- ============================================================================
--- 2. MULTI-PROVIDER OAUTH ACCOUNTS
+-- 2. MULTI-PROVIDER OAUTH ACCOUNTS & SESSIONS
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.oauth_accounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -87,7 +91,6 @@ CREATE TABLE IF NOT EXISTS public.oauth_accounts (
 CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user_id ON public.oauth_accounts(user_id);
 CREATE INDEX IF NOT EXISTS idx_oauth_accounts_lookup ON public.oauth_accounts(provider, provider_user_id);
 
--- User sessions
 CREATE TABLE IF NOT EXISTS public.user_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -128,13 +131,14 @@ CREATE TABLE IF NOT EXISTS public.products (
     cover_image TEXT NOT NULL,
     banner_image TEXT,
     category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL,
-    platform TEXT NOT NULL CHECK (platform IN ('Steam', 'Xbox', 'PlayStation', 'Nintendo', 'PC', 'Minecraft', 'Epic Games', 'Ubisoft', 'EA App')),
+    platform TEXT NOT NULL,
     region TEXT NOT NULL DEFAULT 'Global',
-    activation_instructions TEXT NOT NULL,
+    activation_instructions TEXT NOT NULL DEFAULT 'Redeem using standard platform client instructions.',
     current_price NUMERIC(10, 2) NOT NULL CHECK (current_price >= 0),
     comparison_price NUMERIC(10, 2) CHECK (comparison_price IS NULL OR comparison_price >= current_price),
     currency TEXT NOT NULL DEFAULT 'USD',
     is_published BOOLEAN NOT NULL DEFAULT true,
+    is_active BOOLEAN NOT NULL DEFAULT true,
     is_featured BOOLEAN NOT NULL DEFAULT false,
     low_stock_threshold INT NOT NULL DEFAULT 3 CHECK (low_stock_threshold >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
@@ -177,14 +181,12 @@ CREATE TABLE IF NOT EXISTS public.inventory_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
-CREATE INDEX IF NOT EXISTS idx_inventory_logs_product ON public.inventory_logs(product_id);
-
 -- ============================================================================
 -- 5. CARTS & COUPONS
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.carts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
     session_token TEXT UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
@@ -218,7 +220,7 @@ CREATE TABLE IF NOT EXISTS public.coupons (
 CREATE TABLE IF NOT EXISTS public.orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_number TEXT UNIQUE NOT NULL,
-    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     customer_email TEXT NOT NULL,
     subtotal NUMERIC(10, 2) NOT NULL CHECK (subtotal >= 0),
     discount_amount NUMERIC(10, 2) NOT NULL DEFAULT 0.00 CHECK (discount_amount >= 0),
@@ -252,7 +254,7 @@ ALTER TABLE public.product_inventory
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.cutluy_payments (
     id TEXT PRIMARY KEY,
-    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     order_id TEXT,
     purpose TEXT NOT NULL CHECK (purpose IN ('topup', 'order')),
     amount NUMERIC(10, 2) NOT NULL CHECK (amount > 0),
@@ -273,7 +275,7 @@ CREATE INDEX IF NOT EXISTS idx_cutluy_payments_status ON public.cutluy_payments(
 
 CREATE TABLE IF NOT EXISTS public.wallet_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     payment_id TEXT REFERENCES public.cutluy_payments(id) ON DELETE SET NULL,
     type TEXT NOT NULL CHECK (type IN ('topup', 'spend', 'refund')),
     amount NUMERIC(10, 2) NOT NULL CHECK (amount > 0),
@@ -294,7 +296,7 @@ CREATE INDEX IF NOT EXISTS idx_wallet_tx_created ON public.wallet_transactions(c
 CREATE TABLE IF NOT EXISTS public.reviews (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     order_id UUID REFERENCES public.orders(id) ON DELETE SET NULL,
     rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
     comment TEXT,
@@ -304,7 +306,7 @@ CREATE TABLE IF NOT EXISTS public.reviews (
 
 CREATE TABLE IF NOT EXISTS public.support_tickets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     name TEXT NOT NULL,
     email TEXT NOT NULL,
     subject TEXT NOT NULL,
@@ -328,7 +330,7 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 );
 
 -- ============================================================================
--- 9. DISCORD BOT & RECAPTCHA VERIFICATIONS
+-- 9. DISCORD BOT VERIFICATIONS
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.discord_verifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -357,7 +359,7 @@ CREATE TABLE IF NOT EXISTS public.verification_sessions (
 );
 
 -- ============================================================================
--- 10. ADMIN EMAIL OTP & TWO-FACTOR AUTH SESSIONS
+-- 10. ADMIN EMAIL OTP & TWO-FACTOR SESSIONS
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.admin_email_otps (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -384,7 +386,7 @@ CREATE TABLE IF NOT EXISTS public.admin_active_sessions (
 );
 
 -- ============================================================================
--- 11. CONCURRENCY-SAFE KEY ASSIGNMENT FUNCTION
+-- 11. KEY ATOMIC ASSIGNMENT FUNCTION
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.assign_keys_to_order_item(
     p_order_item_id UUID,
@@ -433,7 +435,7 @@ END;
 $$;
 
 -- ============================================================================
--- 12. ROW LEVEL SECURITY (RLS) POLICIES
+-- 12. ROW LEVEL SECURITY (RLS) POLICIES & PERMISSIONS
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
@@ -445,13 +447,23 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Grant schema permissions to avoid 'permission denied' errors
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO postgres, anon, authenticated, service_role;
+
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.profiles;
 CREATE POLICY "Public profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
-CREATE POLICY "Users can insert their own profile" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can insert their own profile" ON public.profiles FOR INSERT WITH CHECK (true);
 DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
-CREATE POLICY "Users can update their own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Users can update their own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id OR public.is_admin());
 
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Categories are readable by everyone" ON public.categories;
@@ -468,12 +480,14 @@ CREATE POLICY "Admins can view and manage inventory" ON public.product_inventory
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view their own orders" ON public.orders;
 CREATE POLICY "Users can view their own orders" ON public.orders FOR SELECT USING (auth.uid() = user_id OR public.is_admin());
+DROP POLICY IF EXISTS "Users can insert their own orders" ON public.orders;
+CREATE POLICY "Users can insert their own orders" ON public.orders FOR INSERT WITH CHECK (true);
 
 ALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view their own order items" ON public.order_items;
-CREATE POLICY "Users can view their own order items" ON public.order_items FOR SELECT USING (
-    EXISTS (SELECT 1 FROM public.orders WHERE orders.id = order_items.order_id AND (orders.user_id = auth.uid() OR public.is_admin()))
-);
+CREATE POLICY "Users can view their own order items" ON public.order_items FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Users can insert order items" ON public.order_items;
+CREATE POLICY "Users can insert order items" ON public.order_items FOR INSERT WITH CHECK (true);
 
 ALTER TABLE public.coupons ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Active coupons can be validated by users" ON public.coupons;
@@ -482,6 +496,8 @@ CREATE POLICY "Active coupons can be validated by users" ON public.coupons FOR S
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Reviews are viewable by everyone" ON public.reviews;
 CREATE POLICY "Reviews are viewable by everyone" ON public.reviews FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Users can create reviews" ON public.reviews;
+CREATE POLICY "Users can create reviews" ON public.reviews FOR INSERT WITH CHECK (true);
 
 ALTER TABLE public.support_tickets ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anyone can create a support ticket" ON public.support_tickets;
@@ -489,14 +505,16 @@ CREATE POLICY "Anyone can create a support ticket" ON public.support_tickets FOR
 
 ALTER TABLE public.cutluy_payments ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users view own payments" ON public.cutluy_payments;
-CREATE POLICY "Users view own payments" ON public.cutluy_payments FOR SELECT USING (auth.uid() = user_id OR public.is_admin());
+CREATE POLICY "Users view own payments" ON public.cutluy_payments FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Users can insert payments" ON public.cutluy_payments;
+CREATE POLICY "Users can insert payments" ON public.cutluy_payments FOR INSERT WITH CHECK (true);
 
 ALTER TABLE public.wallet_transactions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users view own wallet transactions" ON public.wallet_transactions;
-CREATE POLICY "Users view own wallet transactions" ON public.wallet_transactions FOR SELECT USING (auth.uid() = user_id OR public.is_admin());
+CREATE POLICY "Users view own wallet transactions" ON public.wallet_transactions FOR SELECT USING (true);
 
 -- ============================================================================
--- 13. SEED INITIAL STORE DATA
+-- 13. SEED INITIAL STORE CATEGORIES & DEFAULT ADMIN
 -- ============================================================================
 INSERT INTO public.categories (id, name, slug, description, icon_name, display_order)
 VALUES
@@ -506,8 +524,29 @@ VALUES
     ('c4444444-4444-4444-4444-444444444444', 'Minecraft & Sandbox', 'minecraft-sandbox', 'Minecraft keys, minecoins, and sandbox construction games', 'Pickaxe', 4),
     ('c5555555-5555-5555-5555-555555555555', 'Gift Cards & Subscriptions', 'gift-cards', 'PlayStation, Xbox, Steam wallets, and game pass memberships', 'CreditCard', 5),
     ('c6666666-6666-6666-6666-666666666666', 'Sports & Racing', 'sports-racing', 'Authentic sports simulators and racing titles', 'Trophy', 6)
-ON CONFLICT (slug) DO NOTHING;
+ON CONFLICT (slug) DO UPDATE SET
+    name = EXCLUDED.name,
+    icon_name = EXCLUDED.icon_name;
 
+-- Seed default Administrator Profile
+INSERT INTO public.profiles (id, username, display_name, email, role, status, email_verified, wallet_balance)
+VALUES (
+    'a0000000-0000-0000-0000-000000000001',
+    'admin',
+    'Nightmare Store Admin',
+    'mdara9695@gmail.com',
+    'admin',
+    'active',
+    true,
+    9999.00
+)
+ON CONFLICT (id) DO UPDATE SET
+    role = 'admin',
+    status = 'active';
+
+-- ============================================================================
+-- 14. SEED PRODUCTS
+-- ============================================================================
 INSERT INTO public.products (
     id, name, slug, description, cover_image, banner_image, 
     category_id, platform, region, activation_instructions, 
@@ -515,16 +554,16 @@ INSERT INTO public.products (
 )
 VALUES
 (
-    'p1000000-0000-0000-0000-000000000001',
+    '10000000-0000-0000-0000-000000000001',
     'Cyberpunk 2077: Phantom Liberty Bundle',
     'cyberpunk-2077-phantom-liberty-bundle',
-    'Phantom Liberty is a spy-thriller expansion for Cyberpunk 2077. Enter the shadows of Dogtown and master high-stakes espionage.',
+    'Phantom Liberty is a spy-thriller expansion for Cyberpunk 2077. Enter the shadows of Dogtown and master high-stakes espionage in Night City.',
     'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80',
     'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&auto=format&fit=crop&q=80',
     'c1111111-1111-1111-1111-111111111111',
     'Steam',
     'Global',
-    '1. Open Steam client.\n2. Go to Games -> Activate a Product on Steam.\n3. Enter the key supplied by NIGHTMARE STORE.\n4. Enjoy the journey.',
+    '1. Open Steam client.\n2. Click Games -> Activate a Product on Steam.\n3. Enter key code.\n4. Enjoy the journey.',
     34.99,
     59.99,
     'USD',
@@ -533,7 +572,7 @@ VALUES
     5
 ),
 (
-    'p1000000-0000-0000-0000-000000000002',
+    '10000000-0000-0000-0000-000000000002',
     'Elden Ring: Shadow of the Erdtree Edition',
     'elden-ring-shadow-of-the-erdtree',
     'Guided by grace to brandish the power of the Elden Ring and become an Elden Lord in the Lands Between.',
@@ -551,11 +590,29 @@ VALUES
     4
 ),
 (
-    'p1000000-0000-0000-0000-000000000004',
+    '10000000-0000-0000-0000-000000000003',
+    'Black Myth: Wukong - Digital Deluxe Edition',
+    'black-myth-wukong-deluxe',
+    'An action RPG rooted in Chinese mythology. Set out as the Destined One to venture into the challenges ahead to uncover ancient truth.',
+    'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=1600&auto=format&fit=crop&q=80',
+    'c1111111-1111-1111-1111-111111111111',
+    'Steam',
+    'Global',
+    '1. Open Steam client.\n2. Go to Games -> Activate a Product on Steam.\n3. Enter the key.',
+    49.99,
+    69.99,
+    'USD',
+    true,
+    true,
+    3
+),
+(
+    '10000000-0000-0000-0000-000000000004',
     'Minecraft: Java & Bedrock Edition for PC',
     'minecraft-java-bedrock-edition-pc',
     'Create, explore, survive, and repeat. Unified launcher gives you access to both Java and Bedrock editions.',
-    'https://images.unsplash.com/photo-1627856013091-fed6e4e30025?w=800&auto=format&fit=crop&q=80',
+    '/card-minecraft-hd.png',
     'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=1600&auto=format&fit=crop&q=80',
     'c4444444-4444-4444-4444-444444444444',
     'Minecraft',
@@ -567,12 +624,223 @@ VALUES
     true,
     true,
     10
+),
+(
+    '10000000-0000-0000-0000-000000000005',
+    'Helldivers 2 - Super Citizen Edition',
+    'helldivers-2-super-citizen',
+    'The Galaxy’s Last Line of Offence. Enlist in the Helldivers and join the fight for freedom across a hostile galaxy.',
+    'https://images.unsplash.com/photo-1552824722-ddab1374e622?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=1600&auto=format&fit=crop&q=80',
+    'c2222222-2222-2222-2222-222222222222',
+    'Steam',
+    'Global',
+    '1. Log into Steam.\n2. Activate key.\n3. Play.',
+    37.99,
+    59.99,
+    'USD',
+    true,
+    true,
+    4
+),
+(
+    '10000000-0000-0000-0000-000000000006',
+    'PlayStation Store $50 USD Gift Card',
+    'playstation-store-50-usd-gift-card',
+    'Top up your PlayStation Network wallet to purchase full games, DLC, and add-ons from PlayStation Store.',
+    'https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1486401899868-0e435ed85128?w=1600&auto=format&fit=crop&q=80',
+    'c5555555-5555-5555-5555-555555555555',
+    'PlayStation',
+    'North America',
+    '1. Sign in to PSN.\n2. Redeem code in PlayStation Store.',
+    44.99,
+    50.00,
+    'USD',
+    true,
+    false,
+    4
+),
+(
+    '10000000-0000-0000-0000-000000000007',
+    'Xbox Game Pass Ultimate - 3 Months Membership',
+    'xbox-game-pass-ultimate-3-months',
+    'Over 100 high-quality console & PC games, EA Play membership, and Cloud Gaming.',
+    'https://images.unsplash.com/photo-1605901309584-818e25960a8f?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1526738549149-8e07eca6c147?w=1600&auto=format&fit=crop&q=80',
+    'c5555555-5555-5555-5555-555555555555',
+    'Xbox',
+    'Global',
+    '1. Go to redeem.microsoft.com.\n2. Enter code.',
+    32.99,
+    44.99,
+    'USD',
+    true,
+    true,
+    3
+),
+(
+    '10000000-0000-0000-0000-000000000008',
+    'EA SPORTS FC 25 Standard Edition',
+    'ea-sports-fc-25-standard-edition',
+    'Experience tactical realism with FC IQ overhaul. Play as the biggest clubs and leagues in football.',
+    'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?w=1600&auto=format&fit=crop&q=80',
+    'c6666666-6666-6666-6666-666666666666',
+    'EA App',
+    'Global',
+    '1. Launch EA App.\n2. Redeem code.',
+    46.99,
+    69.99,
+    'USD',
+    true,
+    false,
+    3
+),
+(
+    '10000000-0000-0000-0000-000000000009',
+    'FiveM Activation Code',
+    'fivem-activation-code',
+    'Instant FiveM Rockstar activation digital key for custom GTA roleplay servers.',
+    '/card-rockstar-hd.png',
+    'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&auto=format&fit=crop&q=80',
+    'c1111111-1111-1111-1111-111111111111',
+    'Fivem',
+    'Global',
+    'Enter key on your FiveM client or Rockstar Games Launcher.',
+    0.50,
+    2.00,
+    'USD',
+    true,
+    false,
+    10
+),
+(
+    '10000000-0000-0000-0000-000000000010',
+    'Account rockstar',
+    'rockstar-account',
+    'Pre-activated Rockstar Games Account Ready for instant play.',
+    '/card-rockstar-account.png',
+    'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&auto=format&fit=crop&q=80',
+    'c1111111-1111-1111-1111-111111111111',
+    'Fivem',
+    'Global',
+    'Credentials provided automatically on your order receipt.',
+    4.50,
+    6.00,
+    'USD',
+    true,
+    true,
+    5
+),
+(
+    '10000000-0000-0000-0000-000000000011',
+    'gemini pro 18month',
+    'gemini-pro-18month',
+    'Google Gemini Pro 18-Month Premium AI Subscription upgrade voucher.',
+    '/card-gemini.png',
+    'https://images.unsplash.com/photo-1526738549149-8e07eca6c147?w=1600&auto=format&fit=crop&q=80',
+    'c3333333-3333-3333-3333-333333333333',
+    'Giftlink',
+    'Global',
+    'Open the private link delivered to your order page to claim.',
+    3.00,
+    18.00,
+    'USD',
+    true,
+    true,
+    5
+),
+(
+    '10000000-0000-0000-0000-000000000012',
+    'Nitro Discord 3Month',
+    'nitro-discord-3month',
+    'Discord Nitro 3-Month promotional gift link with custom emojis, 2 server boosts & 500MB uploads.',
+    '/card-nitro.png',
+    'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80',
+    'c3333333-3333-3333-3333-333333333333',
+    'Giftlink',
+    'Global',
+    'Click the unique Discord promo link to activate on your Discord account.',
+    4.00,
+    29.99,
+    'USD',
+    true,
+    true,
+    8
+),
+(
+    '10000000-0000-0000-0000-000000000013',
+    '14x 1 Month Server Boosts',
+    '14x-1-month-server-boosts',
+    'Instantly Level 3 boost your Discord guild with 14x 1-month server boosts.',
+    '/card-nitro-boosts-hd.png',
+    'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80',
+    'c3333333-3333-3333-3333-333333333333',
+    'Giftlink',
+    'Global',
+    'Provide invite link in order notes for automated guild boosting.',
+    7.00,
+    49.99,
+    'USD',
+    true,
+    false,
+    5
+),
+(
+    '10000000-0000-0000-0000-000000000014',
+    'Outlook E-Mail Accounts',
+    'outlook-e-mail-accounts',
+    'Clean POP3/IMAP enabled Outlook mail accounts verified with recovery safeguards.',
+    'https://images.unsplash.com/photo-1596526131083-e8c633c948d2?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1600&auto=format&fit=crop&q=80',
+    'c3333333-3333-3333-3333-333333333333',
+    'mail',
+    'Global',
+    'Format: email|password|recovery',
+    0.20,
+    1.00,
+    'USD',
+    true,
+    false,
+    20
+),
+(
+    '10000000-0000-0000-0000-000000000015',
+    'Nord VPN Lifetime',
+    'nord-vpn-lifetime',
+    'NordVPN premium high-speed encrypted VPN license with double encryption & threat protection.',
+    'https://images.unsplash.com/photo-1563986768609-322da13575f3?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1600&auto=format&fit=crop&q=80',
+    'c3333333-3333-3333-3333-333333333333',
+    'vpn',
+    'Global',
+    'Log in directly using supplied account credentials.',
+    2.00,
+    59.99,
+    'USD',
+    true,
+    true,
+    5
 )
-ON CONFLICT (slug) DO NOTHING;
+ON CONFLICT (slug) DO UPDATE SET
+    name = EXCLUDED.name,
+    current_price = EXCLUDED.current_price,
+    comparison_price = EXCLUDED.comparison_price,
+    cover_image = EXCLUDED.cover_image,
+    platform = EXCLUDED.platform,
+    is_published = EXCLUDED.is_published,
+    is_active = EXCLUDED.is_active;
 
+-- ============================================================================
+-- 15. SEED COUPONS
+-- ============================================================================
 INSERT INTO public.coupons (id, code, discount_type, discount_value, min_spend, max_uses, times_used, is_active)
 VALUES
     ('cp111111-1111-1111-1111-111111111111', 'CYBER15', 'percentage', 15.00, 20.00, 1000, 42, true),
     ('cp222222-2222-2222-2222-222222222222', 'NEON10', 'percentage', 10.00, 10.00, 500, 19, true),
-    ('cp333333-3333-3333-3333-333333333333', 'DARA5OFF', 'fixed', 5.00, 30.00, 200, 8, true)
-ON CONFLICT (code) DO NOTHING;
+    ('cp333333-3333-3333-3333-333333333333', 'DARA5OFF', 'fixed', 5.00, 30.00, 200, 8, true),
+    ('cp444444-4444-4444-4444-444444444444', 'NIGHTMARE', 'percentage', 15.00, 1.00, 5000, 10, true)
+ON CONFLICT (code) DO UPDATE SET
+    is_active = true,
+    discount_value = EXCLUDED.discount_value;

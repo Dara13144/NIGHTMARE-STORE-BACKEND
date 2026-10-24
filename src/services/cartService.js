@@ -1,7 +1,27 @@
 import { localStore } from '../config/supabase.js';
 import { ProductService } from './productService.js';
 
+export function findProduct(productId) {
+  if (!productId) return null;
+  const target = String(productId).trim().toLowerCase();
+  return (localStore.products || []).find((p) => {
+    if (p.is_published === false) return false;
+    const pId = String(p.id || '').toLowerCase();
+    const pRealId = String(p.real_id || '').toLowerCase();
+    const pSlug = String(p.slug || '').toLowerCase();
+    const pName = String(p.name || '').toLowerCase();
+
+    if (pId === target || pRealId === target || pSlug === target || pName === target) return true;
+    if ((target === 'prod-fivem-ready' || target.includes('rockstar')) && (pSlug === 'rockstar-account' || pId === 'prod-10' || pName.includes('rockstar'))) return true;
+    if ((target === 'prod-gemini-18m' || target.includes('gemini')) && (pSlug.includes('gemini') || pName.includes('gemini'))) return true;
+    if ((target === 'prod-nitro-3m' || target.includes('nitro')) && (pSlug.includes('nitro') || pName.includes('nitro'))) return true;
+    if ((target === 'prod-mc-group' || target.includes('minecraft')) && (pSlug.includes('minecraft') || pName.includes('minecraft'))) return true;
+    return false;
+  }) || localStore.products[0];
+}
+
 export class CartService {
+  static findProduct = findProduct;
   /**
    * Find or create cart by user ID or guest session token
    */
@@ -45,7 +65,7 @@ export class CartService {
     const validatedItems = [];
 
     for (const item of cart.items) {
-      const product = this.findProduct(item.product_id);
+      const product = findProduct(item.product_id);
       if (!product) continue;
 
       const stock = ProductService.calculateStock(product.id, product.low_stock_threshold);
@@ -82,30 +102,10 @@ export class CartService {
   }
 
   /**
-  static findProduct(productId) {
-    if (!productId) return null;
-    const target = String(productId).trim().toLowerCase();
-    return (localStore.products || []).find((p) => {
-      if (p.is_published === false) return false;
-      const pId = String(p.id || '').toLowerCase();
-      const pRealId = String(p.real_id || '').toLowerCase();
-      const pSlug = String(p.slug || '').toLowerCase();
-      const pName = String(p.name || '').toLowerCase();
-
-      if (pId === target || pRealId === target || pSlug === target || pName === target) return true;
-      if ((target === 'prod-fivem-ready' || target.includes('rockstar')) && (pSlug === 'rockstar-account' || pId === 'prod-10' || pName.includes('rockstar'))) return true;
-      if ((target === 'prod-gemini-18m' || target.includes('gemini')) && (pSlug.includes('gemini') || pName.includes('gemini'))) return true;
-      if ((target === 'prod-nitro-3m' || target.includes('nitro')) && (pSlug.includes('nitro') || pName.includes('nitro'))) return true;
-      if ((target === 'prod-mc-group' || target.includes('minecraft')) && (pSlug.includes('minecraft') || pName.includes('minecraft'))) return true;
-      return false;
-    }) || localStore.products[0];
-  }
-
-  /**
    * Add item to cart with stock validation
    */
   static async addItem(userId, sessionToken, productId, quantity = 1) {
-    const product = this.findProduct(productId);
+    const product = findProduct(productId);
     if (!product) {
       throw new Error('Product not found or is currently unavailable');
     }
@@ -142,7 +142,7 @@ export class CartService {
 
     if (!item) {
       // If item was stored locally or session was fresh, locate product and upsert gracefully
-      const matchedProduct = this.findProduct(itemId);
+      const matchedProduct = findProduct(itemId);
       if (matchedProduct && quantity > 0) {
         return this.addItem(userId, sessionToken, matchedProduct.id, quantity);
       }
@@ -155,7 +155,7 @@ export class CartService {
       return this.getCart(userId, cart.session_token);
     }
 
-    const product = this.findProduct(item.product_id);
+    const product = findProduct(item.product_id);
     if (!product) {
       cart.items = cart.items.filter((i) => i !== item);
       cart.updated_at = new Date();

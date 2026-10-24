@@ -11,7 +11,7 @@ export function errorHandler(err, req, res, next) {
       status = 404;
     } else if (msg.includes('already exists') || msg.includes('conflict')) {
       status = 409;
-    } else if (msg.includes('stock') || msg.includes('invalid') || msg.includes('required') || msg.includes('cannot') || msg.includes('must be')) {
+    } else if (msg.includes('stock') || msg.includes('balance') || msg.includes('insufficient') || msg.includes('invalid') || msg.includes('required') || msg.includes('cannot') || msg.includes('must be')) {
       status = 400;
     } else if (msg.includes('authentication required') || msg.includes('unauthorized') || msg.includes('not authenticated')) {
       status = 401;

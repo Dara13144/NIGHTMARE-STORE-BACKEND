@@ -38,7 +38,7 @@ function createRateLimitHandler(message, retrySeconds) {
  */
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 1500,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIp,
@@ -47,8 +47,10 @@ export const apiLimiter = rateLimit({
     900
   ),
   skip: (req) => {
-    // Health and readiness probes should never be throttled by general rate limiter
-    return req.path === '/health' || req.path === '/ready' || req.path === '/api/health';
+    // Health, readiness, and public read-only catalog browsing should never be throttled
+    if (req.path === '/health' || req.path === '/ready' || req.path === '/api/health') return true;
+    if (req.method === 'GET' && (req.path.includes('/products') || req.path.includes('/categories'))) return true;
+    return false;
   },
 });
 

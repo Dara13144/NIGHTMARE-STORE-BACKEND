@@ -34,25 +34,9 @@ function createRateLimitHandler(message, retrySeconds) {
 
 /**
  * 1. General API Rate Limiter
- * 300 requests per 15 minutes per IP
+ * Non-blocking pass-through to ensure continuous store browsing, cart fetching, and order flow without 429 errors
  */
-export const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 1500,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: getClientIp,
-  handler: createRateLimitHandler(
-    'Too many requests from this IP address. Please slow down and try again later.',
-    900
-  ),
-  skip: (req) => {
-    // Health, readiness, and public read-only catalog browsing should never be throttled
-    if (req.path === '/health' || req.path === '/ready' || req.path === '/api/health') return true;
-    if (req.method === 'GET' && (req.path.includes('/products') || req.path.includes('/categories'))) return true;
-    return false;
-  },
-});
+export const apiLimiter = (req, res, next) => next();
 
 /**
  * 2. Strict Authentication Rate Limiter (Login, Register, Password Reset)

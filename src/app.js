@@ -69,7 +69,17 @@ app.use(
   cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g. mobile apps, curl, server-to-server webhooks)
-      if (!origin || allowedOrigins.includes(origin) || env.NODE_ENV !== 'production') {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        env.NODE_ENV !== 'production' ||
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1') ||
+        origin.includes('vercel.app') ||
+        origin.includes('netlify.app') ||
+        origin.includes('onrender.com') ||
+        origin.includes('github.io')
+      ) {
         return callback(null, true);
       }
       return callback(new Error('Blocked by CORS policy: Origin not allowed'));

@@ -60,6 +60,9 @@ app.use(
 const allowedOrigins = [
   env.APP_BASE_URL,
   env.FRONTEND_URL,
+  'https://www.nightmarestore.site',
+  'https://nightmarestore.site',
+  'https://nightmare-store-backend.onrender.com',
   'http://localhost:5173',
   'http://localhost:3000',
   'http://127.0.0.1:5173',
@@ -73,6 +76,7 @@ app.use(
         !origin ||
         allowedOrigins.includes(origin) ||
         env.NODE_ENV !== 'production' ||
+        origin.includes('nightmarestore.site') ||
         origin.includes('localhost') ||
         origin.includes('127.0.0.1') ||
         origin.includes('vercel.app') ||

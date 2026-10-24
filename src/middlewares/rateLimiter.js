@@ -44,7 +44,7 @@ export const apiLimiter = (req, res, next) => next();
  */
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 100, // 100 attempts per 15 minutes prevents brute force while allowing seamless OAuth and UI state refreshes
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIp,

@@ -26,21 +26,21 @@ if (!encryptionKey || encryptionKey.length !== 64) {
 export const env = {
   PORT: process.env.PORT || 5050,
   NODE_ENV: process.env.NODE_ENV || 'development',
-  FRONTEND_URL: process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173',
-  BACKEND_URL: process.env.BACKEND_URL || process.env.API_BASE_URL || 'http://localhost:5050',
-  APP_BASE_URL: process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173',
-  API_BASE_URL: process.env.BACKEND_URL || process.env.API_BASE_URL || 'http://localhost:5050',
+  FRONTEND_URL: process.env.FRONTEND_URL || process.env.APP_BASE_URL || (process.env.NODE_ENV === 'production' ? 'https://www.nightmarestore.site' : 'http://localhost:5173'),
+  BACKEND_URL: process.env.BACKEND_URL || process.env.API_BASE_URL || (process.env.NODE_ENV === 'production' ? 'https://nightmare-store-backend.onrender.com' : 'http://localhost:5050'),
+  APP_BASE_URL: process.env.FRONTEND_URL || process.env.APP_BASE_URL || (process.env.NODE_ENV === 'production' ? 'https://www.nightmarestore.site' : 'http://localhost:5173'),
+  API_BASE_URL: process.env.BACKEND_URL || process.env.API_BASE_URL || (process.env.NODE_ENV === 'production' ? 'https://nightmare-store-backend.onrender.com' : 'http://localhost:5050'),
   SESSION_SECRET: process.env.SESSION_SECRET || 'dara_nightmare_secure_session_secret_2026',
 
   // Google OAuth 2.0 Credentials
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
-  GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || `${process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173'}/auth/google/callback`,
+  GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || `${process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://www.nightmarestore.site'}/auth/google/callback`,
 
   // Discord OAuth2 Credentials
   DISCORD_CLIENT_ID: process.env.DISCORD_CLIENT_ID || '',
   DISCORD_CLIENT_SECRET: process.env.DISCORD_CLIENT_SECRET || '',
-  DISCORD_REDIRECT_URI: process.env.DISCORD_REDIRECT_URI || `${process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173'}/auth/discord/callback`,
+  DISCORD_REDIRECT_URI: process.env.DISCORD_REDIRECT_URI || `${process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://www.nightmarestore.site'}/auth/discord/callback`,
 
   // Discord Bot & Role Verification Configuration
   DISCORD_BOT_TOKEN: process.env.DISCORD_BOT_TOKEN || '',

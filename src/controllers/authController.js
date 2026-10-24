@@ -487,7 +487,8 @@ export class AuthController {
    * Return dynamic Google authorization URL matching request origin
    */
   static async getGoogleAuthUrl(req, res) {
-    const redirectUri = req.query.redirect_uri || `${env.APP_BASE_URL}/auth/google/callback`;
+    const callerOrigin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null) || env.APP_BASE_URL;
+    const redirectUri = req.query.redirect_uri || `${callerOrigin}/auth/google/callback`;
     const clientId = env.GOOGLE_CLIENT_ID || '';
     const linkUserId = req.query.link_user_id || (req.query.link === 'true' && req.user ? req.user.id : null);
     const state = linkUserId
@@ -517,7 +518,8 @@ export class AuthController {
       return res.status(400).json({ success: false, error: 'OAuth code missing' });
     }
 
-    const redirectUri = redirect_uri || `${env.APP_BASE_URL}/auth/google/callback`;
+    const callerOrigin = req.headers?.origin || (req.headers?.referer ? new URL(req.headers.referer).origin : null) || env.APP_BASE_URL;
+    const redirectUri = redirect_uri || `${callerOrigin}/auth/google/callback`;
     const clientId = env.GOOGLE_CLIENT_ID || '';
     const clientSecret = env.GOOGLE_CLIENT_SECRET || '';
 

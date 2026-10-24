@@ -9,7 +9,7 @@ const router = Router();
 
 router.post('/validate-coupon', OrderController.validateCoupon);
 router.post('/', checkoutLimiter, optionalAuth, validateRequest(createOrderSchema), OrderController.createOrder);
-router.get('/', requireAuth, OrderController.getOrders);
+router.get('/', optionalAuth, OrderController.getOrders);
 router.get('/:id', optionalAuth, OrderController.getOrderById);
 router.get('/:id/keys', optionalAuth, OrderController.getOrderKeys);
 

@@ -36,11 +36,13 @@ export class OrderController {
   static async getOrders(req, res, next) {
     try {
       const userId = req.user ? req.user.id : null;
+      const userEmail = req.user ? req.user.email : null;
       const isAdmin = req.user?.role === 'admin';
       const { status, limit = 20, offset = 0 } = req.query;
 
       const result = await OrderService.getOrders({
         userId,
+        userEmail,
         status,
         limit: parseInt(limit, 10),
         offset: parseInt(offset, 10),

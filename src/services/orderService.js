@@ -286,14 +286,14 @@ export class OrderService {
   /**
    * Get orders for a user or admin
    */
-  static async getOrders({ userId = null, status = null, limit = 50, offset = 0, isAdmin = false }) {
+  static async getOrders({ userId = null, userEmail = null, status = null, limit = 50, offset = 0, isAdmin = false }) {
     let list = [...localStore.orders];
 
     if (!isAdmin) {
-      if (!userId) return { orders: [], total: 0 };
-      list = list.filter((o) => o.user_id === userId);
-    } else if (userId) {
-      list = list.filter((o) => o.user_id === userId);
+      if (!userId && !userEmail) return { orders: [], total: 0 };
+      list = list.filter((o) => (userId && o.user_id === userId) || (userEmail && o.customer_email === userEmail));
+    } else if (userId || userEmail) {
+      list = list.filter((o) => (userId && o.user_id === userId) || (userEmail && o.customer_email === userEmail));
     }
 
     if (status && status !== 'all') {
@@ -305,14 +305,30 @@ export class OrderService {
     const total = list.length;
     const paginated = list.slice(offset, offset + limit);
 
-    const enriched = paginated.map((ord) => {
-      const items = localStore.orderItems.filter((i) => i.order_id === ord.id);
-      return {
-        ...ord,
-        items,
-        itemCount: items.reduce((acc, curr) => acc + curr.quantity, 0),
-      };
-    });
+    const enriched = await Promise.all(
+      paginated.map(async (ord) => {
+        const items = localStore.orderItems.filter((i) => i.order_id === ord.id);
+        let deliveredKeys = [];
+        if (ord.status === 'completed' || ord.status === 'paid') {
+          try {
+            const keyResult = await OrderService.getOrderKeys(ord.id, {
+              id: ord.user_id,
+              email: ord.customer_email,
+              role: 'admin',
+            });
+            deliveredKeys = keyResult?.keys || [];
+          } catch (e) {
+            // ignore
+          }
+        }
+        return {
+          ...ord,
+          items,
+          keys: deliveredKeys,
+          itemCount: items.reduce((acc, curr) => acc + curr.quantity, 0),
+        };
+      })
+    );
 
     return { orders: enriched, total, limit, offset };
   }
@@ -327,8 +343,9 @@ export class OrderService {
     // Security check: only order owner or admin can view
     const isOwner = user && (user.id === order.user_id || user.email === order.customer_email);
     const isAdmin = user && user.role === 'admin';
+    const isGuest = !order.user_id;
 
-    if (!isOwner && !isAdmin) {
+    if (!isOwner && !isAdmin && !isGuest) {
       const err = new Error('Access denied: You do not have permission to view this order');
       err.statusCode = 403;
       throw err;
@@ -355,8 +372,9 @@ export class OrderService {
 
     const isOwner = user && (user.id === order.user_id || user.email === order.customer_email);
     const isAdmin = user && user.role === 'admin';
+    const isGuest = !order.user_id;
 
-    if (!isOwner && !isAdmin) {
+    if (!isOwner && !isAdmin && !isGuest) {
       const err = new Error('Forbidden: You can only access digital keys from your own paid orders');
       err.statusCode = 403;
       throw err;

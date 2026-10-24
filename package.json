@@ -5,6 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
+    "build": "echo 'Build step skipped for backend'",
     "dev": "node --watch src/server.js",
     "test": "node --test tests/**/*.test.js",
     "seed": "node src/scripts/seed.js"

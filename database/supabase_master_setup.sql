@@ -29,8 +29,16 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
--- Ensure non-blocking constraints so custom registrations & auth users both succeed
+-- Ensure non-blocking constraints and guarantee all columns exist even on existing tables
 ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey;
+ALTER TABLE IF EXISTS public.profiles ADD COLUMN IF NOT EXISTS discord_id TEXT;
+ALTER TABLE IF EXISTS public.profiles ADD COLUMN IF NOT EXISTS google_id TEXT;
+ALTER TABLE IF EXISTS public.profiles ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'customer';
+ALTER TABLE IF EXISTS public.profiles ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE IF EXISTS public.profiles ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false;
+ALTER TABLE IF EXISTS public.profiles ADD COLUMN IF NOT EXISTS wallet_balance NUMERIC(10, 2) NOT NULL DEFAULT 0.00;
+ALTER TABLE IF EXISTS public.profiles ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+ALTER TABLE IF EXISTS public.profiles ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 
 CREATE INDEX IF NOT EXISTS idx_profiles_discord_id ON public.profiles(discord_id);
 CREATE INDEX IF NOT EXISTS idx_profiles_google_id ON public.profiles(google_id);
@@ -144,6 +152,14 @@ CREATE TABLE IF NOT EXISTS public.products (
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+
+-- Guarantee all product columns exist even if products table was created in an earlier migration
+ALTER TABLE IF EXISTS public.products ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE IF EXISTS public.products ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE IF EXISTS public.products ADD COLUMN IF NOT EXISTS is_featured BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE IF EXISTS public.products ADD COLUMN IF NOT EXISTS low_stock_threshold INT NOT NULL DEFAULT 3;
+ALTER TABLE IF EXISTS public.products ADD COLUMN IF NOT EXISTS banner_image TEXT;
+ALTER TABLE IF EXISTS public.products ADD COLUMN IF NOT EXISTS activation_instructions TEXT DEFAULT 'Redeem using standard platform client instructions.';
 
 CREATE INDEX IF NOT EXISTS idx_products_slug ON public.products(slug);
 CREATE INDEX IF NOT EXISTS idx_products_category ON public.products(category_id);
@@ -837,10 +853,10 @@ ON CONFLICT (slug) DO UPDATE SET
 -- ============================================================================
 INSERT INTO public.coupons (id, code, discount_type, discount_value, min_spend, max_uses, times_used, is_active)
 VALUES
-    ('cp111111-1111-1111-1111-111111111111', 'CYBER15', 'percentage', 15.00, 20.00, 1000, 42, true),
-    ('cp222222-2222-2222-2222-222222222222', 'NEON10', 'percentage', 10.00, 10.00, 500, 19, true),
-    ('cp333333-3333-3333-3333-333333333333', 'DARA5OFF', 'fixed', 5.00, 30.00, 200, 8, true),
-    ('cp444444-4444-4444-4444-444444444444', 'NIGHTMARE', 'percentage', 15.00, 1.00, 5000, 10, true)
+    ('c0111111-1111-1111-1111-111111111111', 'CYBER15', 'percentage', 15.00, 20.00, 1000, 42, true),
+    ('c0222222-2222-2222-2222-222222222222', 'NEON10', 'percentage', 10.00, 10.00, 500, 19, true),
+    ('c0333333-3333-3333-3333-333333333333', 'DARA5OFF', 'fixed', 5.00, 30.00, 200, 8, true),
+    ('c0444444-4444-4444-4444-444444444444', 'NIGHTMARE', 'percentage', 15.00, 1.00, 5000, 10, true)
 ON CONFLICT (code) DO UPDATE SET
     is_active = true,
     discount_value = EXCLUDED.discount_value;
